@@ -16,6 +16,7 @@ def main():
 
     vcf_reader = vcf.Reader(sys.stdin)
     vcf_reader.infos['CP'] = vcf.parser._Info('CP',1,'Integer','Consensus position')
+    vcf_reader.infos['VL'] = vcf.parser._Info('VL',1,'Integer','Variant Length')
     vcf_writer = vcf.Writer(sys.stdout, vcf_reader)
 
     for record in vcf_reader:
@@ -26,7 +27,8 @@ def main():
             raise Exception
 
         record.INFO['CP'] = record.POS + offset
-    
+        record.INFO['VL'] = len(record.ALT[0]) - len(record.REF)
+        
         if record.is_indel:
             offset += len(record.ALT[0]) - len(record.REF)
 
