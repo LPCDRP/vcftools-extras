@@ -1,4 +1,5 @@
 
+bin_SCRIPTS = vcf-combine-variants
 bin_PROGRAMS = vcf-consenpos
 
 vcf_consenpos_SOURCES = vcf-consenpos.py
