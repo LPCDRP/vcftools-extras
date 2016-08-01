@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+# Tal Shmaya June 2, 2016
+# Usage: python combine.py file_to_parse.vcf
+# Combines consecutive snps/deletions/insertions 
+
+import sys
+
+def combine_variants():
+
+    prev_position=""
+    prev_col=[0,0,"","",False,False,False,"","",""]
+    prev_ref_str,prev_alt_str="",""
+    new_ref, new_alt="",""
+    printed=False
+    #iterate though file line by line
+    #for line in open(text_file):
+    for line in sys.stdin:
+        columns = line.split()
+        if "#" in line:
+	    sys.stdout.write(line)
+        if "#" not in line and len(columns) > 7:
+            gene = columns[0]
+            position = columns[1]
+            ref = columns[3]
+            alt = columns[4]
+            qual = columns[5]
+            pass_or_het = columns[6]
+            info = columns[7]
+            
+            ref_len=len(ref)
+            alt_len=len(alt)
+            
+            SNP, INSERT, DELETE = False,False,False
+            #check if mutation is snp, deletion or insertion 
+            if ref_len == 1 and ref_len==alt_len:
+                SNP = True
+            if ref_len > alt_len:
+                DELETE = True 
+            if ref_len < alt_len:
+                INSERT = True
+
+            if SNP:
+                # if prev col is also snp and filter is the same and consecutive position
+                if prev_col[4] is True  and pass_or_het == prev_col[7] and int(position) == int(prev_col[1])+1 :
+                    if len(new_ref) > 0:
+                        new_ref=prev_ref_str+ref
+                        new_alt=prev_alt_str+alt
+                    else:
+                        new_ref=prev_col[2]+ref
+                        new_alt=prev_col[3]+alt
+                    printed=True
+                else: #print output and zero everyhing 
+                    if len(new_ref) > 0:
+                        print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9]) 
+                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
+                        printed=True
+
+                    new_ref, new_alt="",""
+                    
+            if DELETE:
+                # if prev col is also deletion and filter is the same and consecutive position
+                if prev_col[5] is True  and pass_or_het == prev_col[7] and int(position) == int(prev_col[1])+len(prev_col[2]) :
+                    if len(new_ref) > 0:
+                        new_ref=prev_ref_str+ref
+                        new_alt=prev_alt_str+alt
+                    else:
+                        new_ref=prev_col[2]+ref
+                        new_alt=prev_col[3]+alt
+                    printed=True
+
+                else: #print output and zero everyhing 
+                    if len(new_ref) > 0:
+                        print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9]) 
+                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
+                        printed=True
+
+                    new_ref, new_alt="",""
+                    
+            
+            if INSERT:
+                # if prev col is also insertion and filter is the same and consecutive position
+                if prev_col[6] is True  and pass_or_het == prev_col[7] and int(position) == int(prev_col[1])+len(prev_col[2]) :
+                    if len(new_ref) > 0:
+                        new_ref=prev_ref_str+ref
+                        new_alt=prev_alt_str+alt
+                    else:
+                        new_ref=prev_col[2]+ref
+                        new_alt=prev_col[3]+alt
+                    printed=True
+
+                else: #print output and zero everyhing 
+                    if len(new_ref) > 0:
+                        print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9]) 
+                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
+                        printed=True
+
+                    new_ref, new_alt="",""
+                   
+            if printed is False:
+                print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
+            
+            # keep previous line information to compare with next line
+            prev_col=[gene,position,ref,alt,SNP,DELETE,INSERT,pass_or_het,qual,info]
+            prev_position=position
+            prev_ref_str=new_ref
+            prev_alt_str=new_alt
+            printed=False
+
+
+if __name__ == "__main__":
+
+    #text_file=sys.argv[1]
+    
+    combine_variants()
