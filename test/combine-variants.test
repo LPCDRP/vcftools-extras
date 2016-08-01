@@ -1,0 +1,15 @@
+#!/usr/bin/make -kf
+
+tests = \
+ snp-mnp \
+ snp-mnp-terminal-variant \
+
+
+.PHONY: all
+all: $(tests)
+
+
+$(foreach test, $(tests), $(eval $(test): $(test).vcf $(test).pass.vcf))
+.PHONY: $(tests)
+$(tests):
+	vcf-combine-variants < $< | diff -u $(word 2,$^) -

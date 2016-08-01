@@ -1,0 +1,5 @@
+##fileformat=VCFv4.2
+##source=biodiffV0.1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+gi|9626243|ref|NC_001416.1|	1	.	GGG	CCA	.	PASS	.
+gi|9626243|ref|NC_001416.1|	7	.	C	A	.	PASS	.
