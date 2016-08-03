@@ -107,6 +107,9 @@ def combine_variants(infile):
             prev_alt_str=new_alt
             printed=False
 
+        if new_ref != "":
+            print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
+
 
 if __name__ == "__main__":
 
