@@ -12,4 +12,4 @@ all: $(tests)
 $(foreach test, $(tests), $(eval $(test): $(test).vcf $(test).pass.vcf))
 .PHONY: $(tests)
 $(tests):
-	vcf-combine-variants < $< | diff -u $(word 2,$^) -
+	vcf-combine-variants $< | diff -u $(word 2,$^) -
