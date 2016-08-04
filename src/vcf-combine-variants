@@ -12,51 +12,63 @@ def combine_variants(infile):
     prev_col=[0,0,"","",False,False,False,"","",""]
     prev_ref_str,prev_alt_str="",""
     new_ref, new_alt="",""
-    printed=False
+    
     #iterate though file line by line
     #for line in open(text_file):
     for line in infile:
-        columns = line.split()
+        # Parse each column of row read in
+	columns = line.split()
+	
+	# Found a header line
         if "#" in line:
 	    sys.stdout.write(line)
         if "#" not in line and len(columns) > 7:
-            gene = columns[0]
-            position = columns[1]
+	    # Store current row's information into local variables
+    	    gene = columns[0]
+            position = int(columns[1])
             ref = columns[3]
             alt = columns[4]
             qual = columns[5]
             pass_or_het = columns[6]
             info = columns[7]
 
+	    # Lengths of reference and alternate alleles
             ref_len=len(ref)
             alt_len=len(alt)
-
-            SNP, INSERT, DELETE = False,False,False
+		
+	    # Determine which of the three options the current variant is
+	    SNP, INSERT, DELETE = False,False,False
             #check if mutation is snp, deletion or insertion
-            if ref_len == 1 and ref_len==alt_len:
-                SNP = True
+	    if ref_len == 1 and ref_len==alt_len:
+               # entered_condition=True
+		SNP = True
             if ref_len > alt_len:
+               # entered_condition=True
                 DELETE = True
             if ref_len < alt_len:
+               # entered_condition=True
                 INSERT = True
 
             if SNP:
                 # if prev col is also snp and filter is the same and consecutive position
                 if prev_col[4] is True  and pass_or_het == prev_col[7] and int(position) == int(prev_col[1])+1 :
-                    if len(new_ref) > 0:
+                    # Elongation of new_ref and new_alt, add current bases for each
+		    if len(new_ref) > 0:
                         new_ref=prev_ref_str+ref
                         new_alt=prev_alt_str+alt
-                    else:
+
+                    # Starting opening beginning of a new_ref and new_alt, append current bases for each
+		    else:
                         new_ref=prev_col[2]+ref
                         new_alt=prev_col[3]+alt
-                    printed=True
-                else: #print output and zero everyhing
-                    if len(new_ref) > 0:
-                        print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
-                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
-                        printed=True
 
-                    new_ref, new_alt="",""
+		# Current base read in is not part of new_ref and new_alt, flush out previous sequences and reset values 
+                else: #print output and zero everyhing
+		    # If we modified the local sequences new_ref and new_alt, flush them out
+		    if len(new_ref) > 0:
+                        print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
+                    new_ref = ref
+		    new_alt = alt
 
             if DELETE:
                 # if prev col is also deletion and filter is the same and consecutive position
@@ -67,15 +79,12 @@ def combine_variants(infile):
                     else:
                         new_ref=prev_col[2]+ref
                         new_alt=prev_col[3]+alt
-                    printed=True
 
                 else: #print output and zero everyhing
-                    if len(new_ref) > 0:
+		    if len(new_ref) > 0:
                         print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
-                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
-                        printed=True
-
-                    new_ref, new_alt="",""
+                    new_ref = ref
+		    new_alt = alt
 
 
             if INSERT:
@@ -87,28 +96,21 @@ def combine_variants(infile):
                     else:
                         new_ref=prev_col[2]+ref
                         new_alt=prev_col[3]+alt
-                    printed=True
 
                 else: #print output and zero everyhing
                     if len(new_ref) > 0:
                         print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
-                        print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
-                        printed=True
-
-                    new_ref, new_alt="",""
-
-            if printed is False:
-                print str(gene) + "\t" + str(position) + "\t" + "." + "\t" + str(ref) + "\t" + str(alt) + "\t" + str(qual) + "\t" + str(pass_or_het) + "\t" + str(info)
-
-            # keep previous line information to compare with next line
+                    new_ref = ref
+		    new_alt = alt
+         # keep previous line information to compare with next line
             prev_col=[gene,position,ref,alt,SNP,DELETE,INSERT,pass_or_het,qual,info]
             prev_position=position
             prev_ref_str=new_ref
             prev_alt_str=new_alt
-            printed=False
 
-        if new_ref != "":
-            print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
+    # Flush to stdout if there is still a new_ref and new_alt which have not yet been printed
+    if new_ref != "":
+         print str(gene) + "\t" + str(int(prev_col[1])-len(prev_ref_str)+len(prev_col[2])) + "\t" + "." + "\t" +str(new_ref) +"\t"+str(new_alt)+ "\t" +str(prev_col[8])+ "\t" +str(prev_col[7])+ "\t" +str(prev_col[9])
 
 
 if __name__ == "__main__":
