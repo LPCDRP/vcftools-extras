@@ -1,9 +1,8 @@
 #!/usr/bin/make -kf
 
-tests = \
- snp-mnp \
- snp-mnp-terminal-variant \
+selfdir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
+tests = $(subst .pass.vcf,,$(notdir $(wildcard $(selfdir)/data/*.pass.vcf)))
 
 .PHONY: all
 all: $(tests)
