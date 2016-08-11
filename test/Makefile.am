@@ -1,5 +1,5 @@
 
-TESTS = combine-variants.test
+dist_TESTS = combine-variants.test
 
 AM_TESTS_ENVIRONMENT = PATH="$(top_srcdir)/src:$$PATH"; VPATH="$(top_srcdir)/test/data:$VPATH"; export PATH VPATH;
 
