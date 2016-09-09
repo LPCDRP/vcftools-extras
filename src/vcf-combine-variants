@@ -26,20 +26,38 @@ class CombineConsecVariants():
 
 	#check if a pair of ref alt is a snp, insertion or deletion, also returns how many bases are inserted/deleted
 	def check_type(self, entry):
-	    ref = entry.ref
-	    alt = "".join(entry.alts)
+		# If entry is a pysam record
+		if isinstance(entry,pysam.cbcf.VariantRecord):
+		    ref = entry.ref
+		    alt = "".join(entry.alts)
 
-	    if len(ref)==len(alt):
-		return "snp", 0 
-	    if len(ref)<len(alt):
-		insert_len=len(alt)-len(ref)
-		return "insertion", insert_len
-	    if len(ref)>len(alt):
-		delete_len=len(ref)-len(alt)
-		return "deletion", delete_len
-	    else:
-		print "something is wrong"
+		    if len(ref)==len(alt):
+			return "snp", 0 
+		    if len(ref)<len(alt):
+			insert_len=len(alt)-len(ref)
+			return "insertion", insert_len
+		    if len(ref)>len(alt):
+			delete_len=len(ref)-len(alt)
+			return "deletion", delete_len
+		    else:
+			print "something is wrong"
 
+		# If entry is a pyvcf record
+		elif isinstance(record,vcf.model._Record):
+		    ref = entry.REF
+		    alt = "".join(entry.ALT)
+
+		    if len(ref)==len(alt):
+			return "snp", 0 
+		    if len(ref)<len(alt):
+			insert_len=len(alt)-len(ref)
+			return "insertion", insert_len
+		    if len(ref)>len(alt):
+			delete_len=len(ref)-len(alt)
+			return "deletion", delete_len
+		    else:
+			print "something is wrong"
+			
 	# setters
 	def set_consec_list(self, consecutive_list):
 		self.clist = consecutive_list
@@ -47,12 +65,54 @@ class CombineConsecVariants():
 	def set_dup_list(self, duplicate_list):
 		self.dlist = duplicate_list
 
+	# Creates list with index for each base in vcf record
 	def populate_list(self,ref_alt,pos):
 	    ref_alt_list=[]
 	    for i,base in enumerate(ref_alt):
 		ref_alt_list.append((base,i+pos))
 
 	    return ref_alt_list
+
+	# Checks if the group of consecutive variants passed in has consecutive snps, returns if there are either consecutive snps or dels, the index of the first occurrence and the length
+	def contains_consec(self,group,snp_or_del):
+		contains_consec = False
+		first_occur = -1
+		length = -1
+		prev_id = ""
+		snp_counts = 1
+		del_counts = 1
+		prev_id = ""
+
+		for index,entry in enumerate(group):
+			entry_type = self.check_type(entry)[0]
+
+			# First entry in group
+			if prev_id == "":
+				prev_id = entry_type
+
+			else:
+				if prev_id == entry_type:
+					if prev_id == "snp":
+						snp_counts += 1
+					elif prev_id == "del":
+						del_counts += 1
+				
+				elif prev_id != entry_type:
+					if snp_counts > 1 and snp_or_del == "snp":
+						contains_consec = True
+						length = snp_counts
+						return contains_consec,index,length
+
+					elif del_counts > 1 and snp_or_del == "del":
+						contains_consec = True
+						length = del_counts
+						return contains_consec,index,length
+
+					snp_counts = 1
+					del_counts = 1
+
+		# No consecutive snps or dels found
+		return	contains_consec,index,length
 
 	def set_consecutive_entries(self, infile):
 	    """
@@ -152,30 +212,36 @@ class CombineConsecVariants():
 
 	    # Print out all records as is if we have ins/ins or snp/del
 	    for group in consecutive_list:
-
 		# More than 2 consecutive records
 		if len(group) > 2:
 			group_size = len(group)
 			snp_count, ins_count, del_count = 0,0,0
 			unknown_cases, unknown_refs_alts = [],[]
+			consec_snps, consec_dels = [],[] # Stores starting index and number of consecutive entries to combine from original group
+			prev_id = ""
+			snp_counts = 1 # Tracks number of additional times current type of variant occurs (ex: 3 snps in a row)
+			del_counts = 1
 
 			# Obtain counts of snps, ins, and deletions --> create list of type of each variant in current group
-			for entry in group:
-				if self.check_type(entry)[0] == "snp":
+			for index,entry in enumerate(group):
+				entry_type = self.check_type(entry)[0] 
+				if entry_type == "snp":
 					snp_count += 1
 					unknown_cases.append("snp")
 
-				elif self.check_type(entry)[0] == "insertion":
+				elif entry_type == "insertion":
 					ins_count += 1
 					unknown_cases.append("insertion")
 
-				elif self.check_type(entry)[0] == "deletion":
+				elif entry_type == "deletion":
 					del_count += 1	
 					unknown_cases.append("deletion")
 
 				unknown_refs_alts.append([entry.pos, entry.ref, "".join(entry.alts)])
+				
+			# consec_dels and consec_snps should now contain list of lists with: [index, number of entries of same type in a row]
 
-			# All snps --> need record constructor
+			# All snps --> done
 			if snp_count == group_size:
 				print "all snps: ", unknown_cases
 				combined_ref, combined_alt  = "",""
@@ -218,7 +284,7 @@ class CombineConsecVariants():
 				print "all ins: ", unknown_cases
 				skip_entry = True
 
-			# All deletions --> need record constructor
+			# All deletions --> done
 			elif del_count == group_size:
 				print "all dels: ", unknown_cases
 				# Get ref (unique union of all consecutive refs)
@@ -259,9 +325,115 @@ class CombineConsecVariants():
 					format,
 					samples
 				)
-				
 				continue
 
+			# Combine 2 or more consecutive variants of same type (only snps and and dels first)
+			# Create new merged snp entrie(s)
+			# Search for consecutive snps and modify group with merged record
+			while contains_consec(group,"snp")[0] == True: 
+				combined_ref = ""
+				combined_alt = ""
+				start_position = contains_consec(group,"snp")[1] # Keep original copy of start
+				start_pos_copy = start_position # Create copy of start position to modify
+				consec_types = contains_consec(group,"snp")[2] # Stores number of variants of the same type in a row
+
+				for x in range(consec_types):
+					cur_record = group[start_pos_copy]
+					record_template = group[start_position]
+
+					# If current record is a pysam record
+					if isinstance(cur_record,pysam.cbcf.VariantRecord):
+						# Concatenate all refs and alts which are all snps
+						combined_ref += cur_record.ref
+						combined_alt += "".join(cur_record.alts)
+
+						# Store information of first item in group and use for combined entry
+						chrom = record_template.chrom
+						pos = record_template.pos
+						id = record_template.id
+						qual = record_template.qual
+						filter = record_template.filter
+						info = record_template.info
+						format = record_template.format
+						samples = record_template.samples
+					
+
+					# Current record is a pyvcf record
+					elif isinstance(cur_record,vcf.model._Record):
+						pyvcf_record = group[start_pos_copy]
+						combined_ref += cur_record.REF
+						combined_alt += "".join(cur_record.ALT)
+
+						# Store information of first item in group and use for combined entry
+						chrom = record_template.CHROM
+						pos = record_template.POS
+						id = record_template.ID
+						qual = record_template.QUAL
+						filter = record_template.FILTER
+						info = record_template.INFO
+						format = record_template.FORMAT
+						samples = record_template.SAMPLES
+
+					start_pos_copy += 1 # Go to next consecutive position
+						
+				# Replace old records with merged record in group
+				# Create new pyvcf record object, add to group, then remove old, unmerged record objects from consecutive group
+				new_record = vcf.model_Record(
+					chrom,
+					pos,
+					id,
+					combined_ref,
+					combined_alt,	
+					qual,
+					filter,
+					info,
+					format,
+					samples
+				)
+				
+				group[start_position:start_position + consec_types] = [new_record]
+			"""
+			# Consecutive snps should now be merged
+			# Search for consecutive dels and modify group with merged record
+			while contains_consec(group,"del")[0] == True:
+				combined_ref = ""
+				combined_alt = ""
+				start_position = contains_consec(group,"del")[1] # Keep original copy of start
+				start_pos_copy = start_position # Create copy of start position to modify
+				consec_types = contains_consec(group,"del")[2] # Stores number of variants of the same type in a row
+
+				for x in range(consec_types):
+					cur_record = group[start_pos_copy]
+
+					if isinstance(cur_record,pysam.cbcf.VariantRecord):
+							
+					elif isinstance(cur_record,vcf.model._Record):
+			"""
+			################### continue here
+			prev_type, cur_type = "",""
+			ins_del, del_ins = [],[] # Store indices of start positions from intermediate list
+
+			# Next find ins/del's and del/ins's found in intermediate list
+			for index,variant in enumerate(intermediate_list):
+				cur_type = self.check_type(variant)[0]
+				
+				# If no the first item in intermediate list
+				if index != 0:
+					if prev_type == "ins" and cur_type == "del":
+						ins_del.append(index)
+					elif prev_type == "del" and cur_type == "ins":
+						del_ins.append(index)
+
+				prev_type = cur_type
+
+			# Merge del/ins's and ins/del's found in intermediate list
+			
+			group = intermediate_list
+
+			# New intermediate list should have either 2 or one record at this point
+			if len(group) == 1:
+				skip_entry = True
+			
 			# Two consecutive insertions, write out whole group
 			#elif == True:
 			#	skip_entry = True	
@@ -282,8 +454,8 @@ class CombineConsecVariants():
 			skip_entry = False
 			continue # Skip to next group
 
-		# Check if the length of the list is equal to 2
-		elif len(group) == 2: 
+		# Check if the length of the list is equal to 2 (either originally or after compression from previous step)
+		if len(group) == 2: 
 			# Keep track of indices as we loop through every entry of each group to be merged
 			for index, cur_entry in enumerate(group):
 			    if index == 0: # We are on the first entry of the current consec group
@@ -297,7 +469,8 @@ class CombineConsecVariants():
 						# Add block of all records to file
 						#print "ins/ins"
 						skip_entry = True
-						break
+						break # Break out of for loop and go to skip check at bottom
+
 
 					# Tal's code	
 					elif current_id == "deletion": # --> needs call to pysam record constructor
@@ -349,6 +522,7 @@ class CombineConsecVariants():
 							format,
 							samples
 						)
+						merged_variants.append(vcf_entry)
 
 					elif current_id == "snp": # --> need call to pysam record constructor
 						combined_ref = prev_entry.ref + cur_entry.ref
@@ -435,8 +609,8 @@ class CombineConsecVariants():
 							samples
 						)
 						merged_variants.append(vcf_entry)
-
 						continue
+
 					elif current_id == "deletion":# --> need call to pysam record constructor
 						print "del/del"
 						ref1_list = self.populate_list(prev_entry.ref, prev_entry.pos)
@@ -458,7 +632,7 @@ class CombineConsecVariants():
 						# Write out block of lines to file
 						print "del/snp"
 						skip_entry = True
-						break
+						break # Break out of for loop and go to skip check at bottom
 
 				# First id is a snp (concatenate all refs and alts no matter what the cur_entry is)
 				elif previous_id == "snp": 
