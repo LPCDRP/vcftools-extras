@@ -1,14 +1,17 @@
 #!/usr/bin/env python
-# Kellie Kim, Tal Shmaya August 24, 2016
+# Kellie Kim August 24, 2016
 # Usage: python combine.py file.vcf.gz
 # Combines consecutive snps/deletions/insertions
 
-import pysam
-from pysam import VariantFile
+import os
+import gzip
 from operator import itemgetter
 import sys
 import vcf
 import collections
+
+__program__ = 'vcf-combine-variants.py'
+__version__ = '1.0.2'
 
 # infile = a vcf.gz file
 # output = a list of lists containing groups of consecutive variants
@@ -26,37 +29,20 @@ class CombineConsecVariants():
 
 	#check if a pair of ref alt is a snp, insertion or deletion, also returns how many bases are inserted/deleted
 	def check_type(self, entry):
-		# If entry is a pysam record
-		if isinstance(entry,pysam.cbcf.VariantRecord):
-		    ref = entry.ref
-		    alt = "".join(entry.alts)
+	    #print "entry is: ", entry
+	    ref = entry.REF
+	    alt = entry.ALT[0]
 
-		    if len(ref)==len(alt):
-			return "snp", 0 
-		    if len(ref)<len(alt):
-			insert_len=len(alt)-len(ref)
-			return "insertion", insert_len
-		    if len(ref)>len(alt):
-			delete_len=len(ref)-len(alt)
-			return "deletion", delete_len
-		    else:
-			print "something is wrong"
-
-		# If entry is a pyvcf record
-		elif isinstance(record,vcf.model._Record):
-		    ref = entry.REF
-		    alt = "".join(entry.ALT)
-
-		    if len(ref)==len(alt):
-			return "snp", 0 
-		    if len(ref)<len(alt):
-			insert_len=len(alt)-len(ref)
-			return "insertion", insert_len
-		    if len(ref)>len(alt):
-			delete_len=len(ref)-len(alt)
-			return "deletion", delete_len
-		    else:
-			print "something is wrong"
+	    if len(ref)==len(alt):
+		return "snp", 0 
+	    if len(ref)<len(alt):
+		insert_len=len(alt)-len(ref)
+		return "insertion", insert_len
+	    if len(ref)>len(alt):
+		delete_len=len(ref)-len(alt)
+		return "deletion", delete_len
+	    else:
+		print "something is wrong"
 			
 	# setters
 	def set_consec_list(self, consecutive_list):
@@ -75,7 +61,7 @@ class CombineConsecVariants():
 
 	# Checks if the group of consecutive variants passed in has consecutive snps, returns if there are either consecutive snps or dels, the index of the first occurrence and the length
 	def contains_consec(self,group,snp_or_del):
-		contains_consec = False
+		contains_consec = -1
 		first_occur = -1
 		length = -1
 		prev_id = ""
@@ -91,46 +77,63 @@ class CombineConsecVariants():
 				prev_id = entry_type
 
 			else:
+				# Found 2 consecutive entries that must be snp or deletion
 				if prev_id == entry_type:
 					if prev_id == "snp":
 						snp_counts += 1
-					elif prev_id == "del":
+						if first_occur == -1:
+							contains_consec = index - 1
+							first_occur += 1
+						
+					elif prev_id == "deletion":
 						del_counts += 1
-				
+						if first_occur == -1:
+							contains_consec = index - 1
+							first_occur += 1
+	
 				elif prev_id != entry_type:
 					if snp_counts > 1 and snp_or_del == "snp":
-						contains_consec = True
 						length = snp_counts
-						return contains_consec,index,length
+						return contains_consec,length
 
-					elif del_counts > 1 and snp_or_del == "del":
-						contains_consec = True
+					elif del_counts > 1 and snp_or_del == "deletion":
 						length = del_counts
-						return contains_consec,index,length
-
-					snp_counts = 1
-					del_counts = 1
+						return contains_consec,length
 
 		# No consecutive snps or dels found
-		return	contains_consec,index,length
+		return	contains_consec,length
+	# Function checks if the current group of consecutive entries has contains either a ins/del or del/ins
+	# Input: group, Output: (index of first occurrence of ins/del or del/ins) 
+	def ins_del(self, group):
+		prev_entry_type, cur_entry_type = "",""
 
+		for index,entry in enumerate(group):
+			cur_entry_type = self.check_type(group[index])[0]
+			if index != 0:
+				if cur_entry_type == "deletion" and prev_entry_type == "insertion":
+					return index-1,"ins_del"
+				elif cur_entry_type == "insertion" and prev_entry_type == "deletion":
+					return index-1,"del_ins"
+			prev_entry_type = cur_entry_type	
+
+		return -1, "none" # No ins_del or del_ins found
+				
 	def set_consecutive_entries(self, infile):
 	    """
 	    Groups consecutive variants into lists contained within a list.
 	    """
 	    # Step 1: group consecutive positions into lists ([[position, reference, alternate]]) 
 	    # Modeled after gerrymander by Afif
-	    vcf_in = VariantFile(infile)
+	    vcf_in = vcf.Reader(filename=infile)
 	    vcf_out = [] # List of records which we will write to the new vcf file
 	    consecutives, duplicates = [], []
 	    block, to_process = [], []
 	    distance, last_position = 0, 0
 	    duplicate = False
-		
 	    counts = 0	
-	    # Iterate through numbered records in pysam file object
+	    # Iterate through numbered records in pyvcf file object
 	    for record in vcf_in:
-		distance = record.pos - last_position
+		distance = record.POS - last_position
 
 		# Hit duplicate entry, reset block and add block
 		if distance == 0: # Duplicate entry
@@ -146,12 +149,10 @@ class CombineConsecVariants():
 				# Only add the block to process if the length is greater than one
 				# Extend consecutives list
 				if len(block) > 1 and duplicate == False:
-				#	print "adding " + str(block[0].pos) + " to consecs"
 					consecutives.append(block)
 				
 				# Extend duplicates list
 				elif len(block) > 1 and duplicate == True:
-				#	print "adding " + str(block[0].pos) + " to dups"
 					duplicates.append(block)
 					duplicate = False
 
@@ -166,7 +167,7 @@ class CombineConsecVariants():
 
 		# Add a tuple containing: position, reference, alt
 		block.append(record)
-		last_position = record.pos
+		last_position = record.POS
 
 	    # Add last block to it's proper place
 	    # If the last block contains more than one entry, add it
@@ -179,28 +180,11 @@ class CombineConsecVariants():
 	    else:
 		vcf_out.append(block[0])
 
-	    ignore_group = False
-		
-
-	    """ Ignoring multi-position filtering for now
-	    # Filter out groups which contain refs and alts of lengths greater than 2
-	    for group in consecutives[1:]:
-	        for entry in group:
-			# Only process if lengths of ref and alt are less than 2
-			if len(entry.ref) > 2 or len("".join(entry.alts)) > 2:
-				ignore_group = True
-
-		if ignore_group != True:
-			to_process.append(group)
-
-		ignore_group = False # Reset for every group processed
-	    """
-
 	    self.set_consec_list(consecutives)
-	   # self.set_consec_list(to_process)
 	    self.set_dup_list(duplicates)
-	    return vcf_out # Return list of single records and dictionary of consec records
+	    return vcf_out # Return list of single pyvcf records and dictionary of consec records
 
+	# Expecting list of pyvcf record objects as input
 	def combine_variants(self, consecutive_list):
 	    merged_variants = []
 	    previous_id, current_id = "", ""
@@ -212,17 +196,16 @@ class CombineConsecVariants():
 
 	    # Print out all records as is if we have ins/ins or snp/del
 	    for group in consecutive_list:
-		# More than 2 consecutive records
+		# More than 2 consecutive vcf records
 		if len(group) > 2:
 			group_size = len(group)
 			snp_count, ins_count, del_count = 0,0,0
 			unknown_cases, unknown_refs_alts = [],[]
-			consec_snps, consec_dels = [],[] # Stores starting index and number of consecutive entries to combine from original group
 			prev_id = ""
 			snp_counts = 1 # Tracks number of additional times current type of variant occurs (ex: 3 snps in a row)
 			del_counts = 1
 
-			# Obtain counts of snps, ins, and deletions --> create list of type of each variant in current group
+			# Obtain counts of snps, ins, and deletions --> create list of type of each variant in current group(ex: ['snp','ins','del']
 			for index,entry in enumerate(group):
 				entry_type = self.check_type(entry)[0] 
 				if entry_type == "snp":
@@ -237,28 +220,26 @@ class CombineConsecVariants():
 					del_count += 1	
 					unknown_cases.append("deletion")
 
-				unknown_refs_alts.append([entry.pos, entry.ref, "".join(entry.alts)])
+				unknown_refs_alts.append([entry.POS, entry.REF, str(entry.ALT[0])])
 				
 			# consec_dels and consec_snps should now contain list of lists with: [index, number of entries of same type in a row]
-
 			# All snps --> done
 			if snp_count == group_size:
-				print "all snps: ", unknown_cases
 				combined_ref, combined_alt  = "",""
 
 				for index,entry in enumerate(group):
-					combined_ref += entry.ref
-					combined_alt += "".join(entry.alts)
+					combined_ref += entry.REF
+					combined_alt += str(entry.ALT[0])
 
 					# Store position of first item in group
 					if index == 0:
-						chrom = entry.chrom
-						pos = entry.pos
-						id = entry.id
-						qual = entry.qual
-						filter = entry.filter
-						info = entry.info
-						format = entry.format
+						chrom = entry.CHROM
+						pos = entry.POS
+						id = entry.ID
+						qual = entry.QUAL
+						filter = entry.FILTER
+						info = entry.INFO
+						format = entry.FORMAT
 						samples = entry.samples
 						
 
@@ -278,40 +259,36 @@ class CombineConsecVariants():
 				merged_variants.append(vcf_entry)
 				continue
 
-			# All insertions --> done
-			elif ins_count == group_size:
-				# Will skip current group and continue after next if below
-				print "all ins: ", unknown_cases
-				skip_entry = True
+			# Greater than 2 consecutive insertions --> done
+			elif ins_count > 1:
+				for item in group:
+					merged_variants.append(item)
+				continue
 
 			# All deletions --> done
 			elif del_count == group_size:
-				print "all dels: ", unknown_cases
 				# Get ref (unique union of all consecutive refs)
 				set_refs = []
 				combined_refs = ""
 				for entry in group:
-					intermediate = self.populate_list(entry.ref, entry.pos)
+					intermediate = self.populate_list(entry.REF, entry.POS)
 					set_refs.append(intermediate)
 				set_refs = set(set_refs)
 				sorted_refs = sorted(set_refs, key=itemgetter(1)) # Sort set of items by position number
 				for index,entry in enumerate(sorted_refs):
-					combined_refs += entry.ref
+					combined_refs += entry.REF
 					if index == 0:
-						chrom = entry.chrom
-						pos = entry.pos
-						id = entry.id
-						qual = entry.qual
-						filter = entry.filter
-						info = entry.info
-						format = entry.format
+						chrom = entry.CHROM
+						pos = entry.POS
+						id = entry.ID
+						qual = entry.QUAL
+						filter = entry.FILTER
+						info = entry.INFO
+						format = entry.FORMAT
 						samples = entry.samples
 						
-				first_entry = group[0] # pysam record object
-				combined_alts = first_entry.alts[0] # the first letter in the tuple will be the new alt
-				print "del/del case, combined refs is: ", combined_refs	
-				print "del/del case, combined alts is: ", combined_alts	
-				# Call constructor for new record object and then add this record object to merged_variants
+				first_entry = group[0] # pyvcf record object
+				combined_alts = first_entry.ALT[0] # only the first letter in the tuple will be the new alt
 				vcf_entry = vcf.model._Record(
 					chrom,
 					pos,
@@ -325,59 +302,94 @@ class CombineConsecVariants():
 					format,
 					samples
 				)
+				merged_variants.append(vcf_entry)	
 				continue
 
-			# Combine 2 or more consecutive variants of same type (only snps and and dels first)
-			# Create new merged snp entrie(s)
-			# Search for consecutive snps and modify group with merged record
-			while contains_consec(group,"snp")[0] == True: 
-				combined_ref = ""
-				combined_alt = ""
-				start_position = contains_consec(group,"snp")[1] # Keep original copy of start
+			# Merge consecutive snps
+			while self.contains_consec(group,"snp")[0] != -1: 
+				combined_ref,combined_alt = "",""
+				start_position = self.contains_consec(group,"snp")[0] # Keep original copy of start
 				start_pos_copy = start_position # Create copy of start position to modify
-				consec_types = contains_consec(group,"snp")[2] # Stores number of variants of the same type in a row
+				consec_types = self.contains_consec(group,"snp")[1] # Stores number of variants of the same type in a row
 
+				# Iterate over number of consecutive snps
 				for x in range(consec_types):
-					cur_record = group[start_pos_copy]
 					record_template = group[start_position]
 
-					# If current record is a pysam record
-					if isinstance(cur_record,pysam.cbcf.VariantRecord):
-						# Concatenate all refs and alts which are all snps
-						combined_ref += cur_record.ref
-						combined_alt += "".join(cur_record.alts)
+					# cur_record is a pyvcf record
+					cur_record = group[start_pos_copy]
+					combined_ref += cur_record.REF
+					combined_alt += str(cur_record.ALT[0])
 
-						# Store information of first item in group and use for combined entry
-						chrom = record_template.chrom
-						pos = record_template.pos
-						id = record_template.id
-						qual = record_template.qual
-						filter = record_template.filter
-						info = record_template.info
-						format = record_template.format
-						samples = record_template.samples
-					
-
-					# Current record is a pyvcf record
-					elif isinstance(cur_record,vcf.model._Record):
-						pyvcf_record = group[start_pos_copy]
-						combined_ref += cur_record.REF
-						combined_alt += "".join(cur_record.ALT)
-
-						# Store information of first item in group and use for combined entry
-						chrom = record_template.CHROM
-						pos = record_template.POS
-						id = record_template.ID
-						qual = record_template.QUAL
-						filter = record_template.FILTER
-						info = record_template.INFO
-						format = record_template.FORMAT
-						samples = record_template.SAMPLES
-
+					# Store information of first item in group and use for combined entry
+					chrom = record_template.CHROM
+					pos = record_template.POS
+					id = record_template.ID
+					qual = record_template.QUAL
+					filter = record_template.FILTER
+					info = record_template.INFO
+					format = record_template.FORMAT
+					samples = record_template.samples
 					start_pos_copy += 1 # Go to next consecutive position
 						
 				# Replace old records with merged record in group
-				# Create new pyvcf record object, add to group, then remove old, unmerged record objects from consecutive group
+				new_record = vcf.model._Record(
+					chrom,
+					pos,
+					id,
+					combined_ref,
+					combined_alt,	
+					qual,
+					filter,
+					info,
+					format,
+					samples
+				)
+
+				# Replace old entries with single, combined pyvcf record
+				print "line 355, group was: "
+				for member in group:
+					print member	
+				group[start_position:start_position + consec_types] = [new_record]
+				print "line 359, group now: "
+				for member in group:
+					print member	
+		
+			# Merge consecutive deletions	
+			while self.contains_consec(group,"deletion")[0] != -1:
+				combined_ref,combined_alt = "",""
+				start_position = contains_consec(group,"deletion")[0] # Keep original copy of start
+				start_pos_copy = start_position # Create copy of start position to modify
+				consec_types = contains_consec(group,"snp")[1] # Stores number of variants of the same type in a row
+
+				# combined_alt will be only the first alt letter of first record in group
+				first_record = group[start_position]
+				combined_alt = first_record.ALT[0]
+				refs = [] # will hold unique union of all refs in group
+				record_template = group[start_position]
+	
+				# Create populated lists for refs and get the unique union	
+				for x in range(consec_types):
+					# Current record is a pyvcf record
+					cur_record = group[start_pos_copy]
+					cur_ref_list = self.populate_list(self,cur_record.REF,cur_record.POS) # Ex: return [['A', 306],['C', 307]] --> [base,position]
+					refs.append(cur_ref_list)
+					start_pos_copy += 1 # Go to next consecutive position
+					
+				combined_refs = sorted(set(refs), key=itemgetter(1)) # sorted, populated list of all the ref bases
+				for item in combined_refs:
+					combined_ref += item[0]			
+
+				# Store information of first item in group and use for combined entry
+				chrom = record_template.CHROM
+				pos = record_template.POS
+				id = record_template.ID
+				qual = record_template.QUAL
+				filter = record_template.FILTER
+				info = record_template.INFO
+				format = record_template.FORMAT
+				samples = record_template.samples
+						
 				new_record = vcf.model_Record(
 					chrom,
 					pos,
@@ -390,69 +402,215 @@ class CombineConsecVariants():
 					format,
 					samples
 				)
-				
+				print "line 404: group was: "
+				for member in group:
+					print member
 				group[start_position:start_position + consec_types] = [new_record]
-			"""
-			# Consecutive snps should now be merged
-			# Search for consecutive dels and modify group with merged record
-			while contains_consec(group,"del")[0] == True:
-				combined_ref = ""
-				combined_alt = ""
-				start_position = contains_consec(group,"del")[1] # Keep original copy of start
-				start_pos_copy = start_position # Create copy of start position to modify
-				consec_types = contains_consec(group,"del")[2] # Stores number of variants of the same type in a row
-
-				for x in range(consec_types):
-					cur_record = group[start_pos_copy]
-
-					if isinstance(cur_record,pysam.cbcf.VariantRecord):
-							
-					elif isinstance(cur_record,vcf.model._Record):
-			"""
-			################### continue here
-			prev_type, cur_type = "",""
+				print "line 407: group now", group
+				for member in group:
+					print member
+			prev_type, cur_type = "","" # simulates parent and child points to pyvcf record objects
 			ins_del, del_ins = [],[] # Store indices of start positions from intermediate list
 
-			# Next find ins/del's and del/ins's found in intermediate list
-			for index,variant in enumerate(intermediate_list):
-				cur_type = self.check_type(variant)[0]
-				
-				# If no the first item in intermediate list
-				if index != 0:
-					if prev_type == "ins" and cur_type == "del":
-						ins_del.append(index)
-					elif prev_type == "del" and cur_type == "ins":
-						del_ins.append(index)
+			# Find ins/del's and del/ins's found in new intermediate list --> each case will either form 1) more snps, 2) unable to combine
+			while self.ins_del(group)[0] != -1: # ex: [index,"ins_del"] or [index,"del_ins"] --> index = -1 if no ins/del, del/ins found
+				index = self.ins_del(group)[0] 
+				if self.ins_del(group)[1] == "ins_del":
+					# unique union for refs
+					index = self.ins_del(group)[0] # index of the ins
+					prev_entry = group[index] 
+					ref1 = self.populate_list(group[index].REF, group[index].POS) # Corresponds to the insertion
+					ref2 = self.populate_list(group[index+1].REF, group[index+1].POS) # Corresponds to the deletion
+					alt1 = self.populate_list(str(group[index].ALT[0]), group[index].POS)
+					alt2 = self.populate_list(str(group[index+1].ALT[0]), group[index+1].POS)
 
-				prev_type = cur_type
+					print "line 424, ref1 is: ", ref1
+					print "line 425, ref2 is: ", ref2
+					print "line 426, alt1 is: ", alt1
+					print "line 427, ref2 is: ", alt2
+					# Populated lists
+					combined_ref = sorted(set(ref1+ref2), key=itemgetter(1)) # populated list
+					combined_alt = sorted(set(alt1+alt2), key=itemgetter(1)) # populated list
+					new_refs,new_alts="",""
 
-			# Merge del/ins's and ins/del's found in intermediate list
+					# Go through lists of master references and alts and add differing bases to final output
+					if len(combined_ref)==len(combined_alt): # Iterate through list of: [base,position]
+					    first_occurence = -1
+					    for i,j in zip(combined_ref,combined_alt):
+						if i[0]!=j[0]:
+						    # store position of first mismatch, relative to reference
+						    if first_occurence == -1:
+							new_pos = i[1] # new reference genome position for combined entry
+							first_occurence += 1
+
+						    new_refs += i[0]
+						    new_alts += j[0]
+					else: 
+						# lengths of combined ref and alt are not equal, don't merge entire block 
+						for record in group:
+							merged_variants.append(record)
+						break # Do not check for anymore ins/dels
+					
+					chrom = prev_entry.CHROM
+					pos = new_pos
+					id = prev_entry.ID
+					qual = prev_entry.QUAL
+					filter = prev_entry.FILTER
+					info = prev_entry.INFO
+					format = prev_entry.FORMAT
+					samples = prev_entry.samples
+
+					vcf_entry = vcf.model._Record(
+						chrom,
+						pos,
+						id,
+						new_refs,
+						new_alts,	
+						qual,
+						filter,
+						info,
+						format,
+						samples
+					)
+					print "line 471, group was: ", group
+					for members in group:
+						print members
+					group[index:index+1] = vcf_entry 
+					print "line 473, group now: ", group
+					for members in group:
+						print members
+					continue
+
+				elif self.ins_del(group)[1] == "del_ins":
+					index = self.ins_del(group)[0]
+					prev_entry = group[index] 
+					ref1 = self.populate_list(group[index].REF, group[index].POS)
+					ref2 = self.populate_list(group[index+1].REF, group[index+1].POS)
+					alt1 = self.populate_list(str(group[index].ALT[0]), group[index].POS)
+					alt2 = self.populate_list(str(group[index+1].ALT[0]), group[index+1].POS)	
+					combined_ref = sorted(set(ref1+ref2), key=itemgetter(1)) # unique union of populated list
+					combined_alt = alt1 # del's alt populated list
+
+					# Add rest of bases in alt2, except first base in populated list 
+					for index,entry in enumerate(alt2):
+						# Skip artifact base and append leftover base and position to populated list
+						if index != 0:
+							combined_alt.append(entry)
+
+					# sort alt bases by position number
+					combined_alt = sorted(combined_alt, key=itemgetter(1)) 
+					# Get diffs between two lists 
+					if len(combined_ref)==len(combined_alt):
+					    new_ref,new_alt,new_pos= "","",""
+						
+					    # Gives position to return
+					    first_occurence = -1
+					    for i,j in zip(combined_ref,combined_alt):
+						if i[0]!=j[0]:
+							# iterate through populated lists and store position of first mismatch, relative to reference
+							if first_occurence == -1:
+								new_pos = i[1]
+								first_occurence += 1
+							new_ref += i[0]
+							new_alt += j[0]
+					    chrom = prev_entry.CHROM
+					    id = prev_entry.ID
+					    pos = new_pos
+					    qual = prev_entry.QUAL
+					    filter = prev_entry.FILTER
+					    info = prev_entry.INFO
+					    format = prev_entry.FORMAT
+					    samples = prev_entry.samples
+
+					    vcf_entry = vcf.model._Record(
+						    chrom,
+						    pos,
+						    id,
+						    new_ref,
+						    new_alt,	
+						    qual,
+						    filter,
+						    info,
+						    format,
+						    samples
+					    )
+					    print "line 542, group was: "
+					    for member in group:
+						print member
+					    group[index:index+1] = vcf_entry 
+					    print "line 546, group now: "
+					    for member in group:
+						print member
+					    
+					else: # Lengths are not equal --> write out entire block
+						for item in group:
+							merged_variants.append(item)	
+							break # do not check for anymore del/ins
+						
 			
-			group = intermediate_list
+			#group should now be a shortened list of either length three or greater			
+			# Fuse any consecutive snps created from last step
+			while self.contains_consec(group,"snp")[0] != -1: # value will be -1 if there is no start index for a set of consecutive snps found 
+				combined_ref,combined_alt = "",""
+				start_position = self.contains_consec(group,"snp")[0] # Keep original copy of start
+				start_pos_copy = start_position # Create copy of start position to modify
+				consec_types = self.contains_consec(group,"snp")[1] # Stores number of variants of the same type in a row
+				record_template = group[start_position]
 
-			# New intermediate list should have either 2 or one record at this point
-			if len(group) == 1:
-				skip_entry = True
-			
-			# Two consecutive insertions, write out whole group
-			#elif == True:
-			#	skip_entry = True	
+				# Store information of first item in group and use for combined entry
+				chrom = record_template.CHROM
+				pos = record_template.POS
+				id = record_template.ID
+				qual = record_template.QUAL
+				filter = record_template.FILTER
+				info = record_template.INFO
+				format = record_template.FORMAT
+				samples = record_template.samples
+
+				for x in range(consec_types):
+					# Current record is a pyvcf record, simply concatenate refs and alts since merging snps
+					cur_record = group[start_pos_copy]
+					combined_ref += cur_record.REF
+					combined_alt += str(cur_record.ALT[0])
+					start_pos_copy += 1 # Go to next consecutive position
+						
+				# Replace old records with merged record in group
+				# Create new intermediate pyvcf record object, add to group, then remove old, unmerged record objects from consecutive group
+				new_record = vcf.model_Record(
+					chrom,
+					pos,
+					id,
+					combined_ref,
+					combined_alt,	
+					qual,
+					filter,
+					info,
+					format,
+					samples
+				)
+
+				# Replace old entries with single, combined pyvcf record
+				print "line 595, group was: "
+				for member in group:
+					print member	
+				group[start_position:start_position + consec_types] = [new_record]
+				print "line 599, group now: "
+				for member in group:
+					print member	
+		
+			# At this point, all ins/del, del/ins, consecutive snps, and consecutive dels, and are combined into new group
+			# Modify group until length is 2 or write out whole group if a condition		
+			if len(group) == 3:
+
+			# If at least two consecutive ins found, whole block was left as is, continue on to the next group in for loop
+			elif len(group) == 1: # Ex: ['snp','snp','snp'] --> ['snp']
+				merged_variants += group			
+				continue # Iterate to next group of consecutive variants	
 
 			# Print out what unknown case we have # --> unknown cases are printed
 			else:
 				print "unknown case: ", unknown_cases, unknown_refs_alts
 				print "####################"
-
-
- 		# For groups with a size larger than 2, we will keep all records in this group as is
-		if skip_entry == True:
-		#	print "skipping this entry"
-			record_objects = []
-			for item in group:
-				record_objects.append(item)
-			merged_variants += record_objects	
-			skip_entry = False
-			continue # Skip to next group
 
 		# Check if the length of the list is equal to 2 (either originally or after compression from previous step)
 		if len(group) == 2: 
@@ -473,14 +631,14 @@ class CombineConsecVariants():
 
 
 					# Tal's code	
-					elif current_id == "deletion": # --> needs call to pysam record constructor
+					elif current_id == "deletion": # --> needs call to pyvcf record constructor
 					#	print "ins/del"
 
 						#concatenate
-						ref1 = self.populate_list(prev_entry.ref, prev_entry.pos)
-						ref2 = self.populate_list(cur_entry.ref, cur_entry.pos)
-						alt1 = self.populate_list("".join(prev_entry.alts), prev_entry.pos)
-						alt2 = self.populate_list("".join(cur_entry.alts), cur_entry.pos)
+						ref1 = self.populate_list(prev_entry.REF, prev_entry.POS)
+						ref2 = self.populate_list(cur_entry.REF, cur_entry.POS)
+						alt1 = self.populate_list(str(prev_entry.ALT[0]), prev_entry.POS)
+						alt2 = self.populate_list(str(cur_entry.ALT[0]), cur_entry.POS)
 
 						# Populated lists
 						combined_ref = ref1 + ref2
@@ -501,13 +659,13 @@ class CombineConsecVariants():
 
 						new_refs = "".join(new_ref)
 						new_alts = "".join(new_alt)
-						chrom = prev_entry.chrom
-						pos = prev_entry.pos
-						id = prev_entry.id
-						qual = prev_entry.qual
-						filter = prev_entry.filter
-						info = prev_entry.info
-						format = prev_entry.format
+						chrom = prev_entry.CHROM
+						pos = new_pos
+						id = prev_entry.ID
+						qual = prev_entry.QUAL
+						filter = prev_entry.FILTER
+						info = prev_entry.INFO
+						format = prev_entry.FORMAT
 						samples = prev_entry.samples
 
 						vcf_entry = vcf.model._Record(
@@ -522,18 +680,20 @@ class CombineConsecVariants():
 							format,
 							samples
 						)
+						#print "*********combined variants is now: ", vcf_entry
 						merged_variants.append(vcf_entry)
 
-					elif current_id == "snp": # --> need call to pysam record constructor
-						combined_ref = prev_entry.ref + cur_entry.ref
-						combined_alt = "".join(prev_entry.alts) + "".join(cur_entry.alts)
-						chrom = prev_entry.chrom
-						pos = prev_entry.pos
-						id = prev_entry.id
-						qual = prev_entry.qual
-						filter = prev_entry.filter
-						info = prev_entry.info
-						format = prev_entry.format
+					elif current_id == "snp": # done
+						combined_ref = prev_entry.REF + cur_entry.REF
+						combined_alt = str(prev_entry.ALT[0]) + str(cur_entry.ALT[0])
+
+						chrom = prev_entry.CHROM
+						pos = prev_entry.POS
+						id = prev_entry.ID
+						qual = prev_entry.QUAL
+						filter = prev_entry.FILTER
+						info = prev_entry.INFO
+						format = prev_entry.FORMAT
 						samples = prev_entry.samples
 	
 						vcf_entry = vcf.model._Record(
@@ -548,24 +708,23 @@ class CombineConsecVariants():
 							format,
 							samples
 						)
+						#print "*********combined variants is now: ", vcf_entry
 						merged_variants.append(vcf_entry)
 						#print "ins/snp"
 						
 
 				# First id is a deletion 
 				elif previous_id == "deletion":
-					if current_id == "insertion": # --> need call to pysam record constructor
+					if current_id == "insertion": # --> done
 						#print "del/ins"
-						if cur_entry.pos == 7614:
-							print "entered correct case"
-						ref1 = self.populate_list(prev_entry.ref, prev_entry.pos)
-						ref2 = self.populate_list(cur_entry.ref, cur_entry.pos)
-						alt1 = self.populate_list("".join(prev_entry.alts), prev_entry.pos)
-						alt2 = self.populate_list("".join(cur_entry.alts), cur_entry.pos)	
+						ref1 = self.populate_list(prev_entry.REF, prev_entry.POS)
+						ref2 = self.populate_list(cur_entry.REF, cur_entry.POS)
+						alt1 = self.populate_list(str(prev_entry.ALT[0]), prev_entry.POS)
+						alt2 = self.populate_list(str(cur_entry.ALT[0]), cur_entry.POS)	
 						combined_ref = sorted(set(ref1+ref2), key=itemgetter(1)) # populated list
 						combined_alt = alt1 # populated list
 
-						# Add rest of bases in alt2, except first base
+						# Add rest of bases in alt2, except first base in populated list 
 						for index,entry in enumerate(alt2):
 							# Skip artifact and append base and position to populated list
 							if index != 0:
@@ -574,6 +733,7 @@ class CombineConsecVariants():
 						combined_alt = sorted(combined_alt, key=itemgetter(1)) 
 						# Get diffs between two lists 
 						if len(combined_ref)==len(combined_alt):
+						    print "lengths are the same!!!"
 						    new_ref,new_alt= "",""
 							
 						    # Gives position to return
@@ -587,13 +747,13 @@ class CombineConsecVariants():
 								new_ref += i[0]
 								new_alt += j[0]
 
-						chrom = prev_entry.chrom
+						chrom = prev_entry.CHROM
 						pos = new_pos
-						id = prev_entry.id
-						qual = prev_entry.qual
-						filter = prev_entry.filter
-						info = prev_entry.info
-						format = prev_entry.format
+						id = prev_entry.ID
+						qual = prev_entry.QUAL
+						filter = prev_entry.FILTER
+						info = prev_entry.INFO
+						format = prev_entry.FORMAT
 						samples = prev_entry.samples
 
 						vcf_entry = vcf.model._Record(
@@ -608,43 +768,55 @@ class CombineConsecVariants():
 							format,
 							samples
 						)
+						#print "*********combined variants is now: ", vcf_entry
 						merged_variants.append(vcf_entry)
 						continue
 
-					elif current_id == "deletion":# --> need call to pysam record constructor
-						print "del/del"
-						ref1_list = self.populate_list(prev_entry.ref, prev_entry.pos)
-						ref2_list = self.populate_list(cur_entry.ref, cur_entry.pos)
+					elif current_id == "deletion":# done
+						#print "del/del"
+						ref1_list = self.populate_list(prev_entry.REF, prev_entry.POS)
+						ref2_list = self.populate_list(cur_entry.REF, cur_entry.POS)
 						set_combined_refs = set(ref1_list + ref2_list) # unique union of refs
 						sorted_combined_refs = sorted(set_combined_refs, key=itemgetter(1)) # sort unique refs by position number (second item in tuple)
 						combined_refs = ""
 						for unique_union in sorted_combined_refs:
 							combined_refs += unique_union[0]
-						combined_alts = prev_entry.alts[0] # only the first alt variant remains
-						print "group is: "
-						print prev_entry.pos, prev_entry.ref, "".join(prev_entry.alts)
-						print cur_entry.pos, cur_entry.ref, "".join(cur_entry.alts)
-						print "combined refs is: ", combined_refs
-						print "combined alts is: ", combined_alts
-						print "####################"
+						combined_alts = prev_entry.ALT[0] # only the first alt variant remains
+						#print "group is: "
+						#print prev_entry.POS, prev_entry.REF, str(prev_entry.ALT[0])
+						#print cur_entry.POS, cur_entry.REF, str(cur_entry.ALT[0])
+						#print "combined refs is: ", combined_refs
+						#print "combined alts is: ", combined_alts
+						#print "####################"
 						continue
 					elif current_id == "snp": # --> done
 						# Write out block of lines to file
-						print "del/snp"
+						#print "del/snp"
 						skip_entry = True
 						break # Break out of for loop and go to skip check at bottom
 
 				# First id is a snp (concatenate all refs and alts no matter what the cur_entry is)
 				elif previous_id == "snp": 
-					combined_ref = prev_entry.ref + cur_entry.ref
-					combined_alt = "".join(prev_entry.alts) + "".join(cur_entry.alts)
-					chrom = prev_entry.chrom
-					new_pos = prev_entry.pos
-					id = prev_entry.id
-					qual = prev_entry.qual
-					filter = prev_entry.filter
-					info = prev_entry.info
-					format = prev_entry.format
+					combined_ref = prev_entry.REF + cur_entry.REF
+					if len(prev_entry.ALT) == 1:
+						prev_alt = prev_entry.ALT[0]
+						
+					else:
+						prev_alt = str(prev_entry.ALT[0])
+
+					if len(cur_entry.ALT) == 1:
+						cur_alt = cur_entry.ALT[0]
+
+					else:
+						cur_alt = str(cur_entry.ALT[0])
+					combined_alt = str(prev_alt) + str(cur_alt)
+					chrom = prev_entry.CHROM
+					new_pos = prev_entry.POS
+					id = prev_entry.ID
+					qual = prev_entry.QUAL
+					filter = prev_entry.FILTER
+					info = prev_entry.INFO
+					format = prev_entry.FORMAT
 					samples = prev_entry.samples
 
 					vcf_entry = vcf.model._Record(
@@ -659,6 +831,7 @@ class CombineConsecVariants():
 						format,
 						samples
 					)
+					#print "*********combined variants is now: ", vcf_entry
 					merged_variants.append(vcf_entry)
 			    	# Update previous
 			    	previous_id = current_id
@@ -666,71 +839,90 @@ class CombineConsecVariants():
 
 			# Check if very last group should be printed out
 			if skip_entry == True:
-				print "skipping this entry"
+			#	print "skipping this entry"
 				record_objects = []
 				for item in group:
 					record_objects.append(item)
 				merged_variants += record_objects # Combine list of record_objects with larger list of record objects	
 	    return merged_variants
 
-
-
+	def combine_dups(self, duplicate_list):
+		for index,entry in duplicate_list:
+			print "dup record is: ", entry		
 
 def main():
-    vcf_in = VariantFile(sys.argv[1])
-    vcf_out = VariantFile('combined_variants.vcf', 'w', header=vcf_in.header)
-    vcf_out.close()
+    #vcf_reader = vcf.Reader(filename=sys.argv[1])
+    vcf_template = vcf.Reader(os.devnull)
+    vcf_template.metadata['fileformat'] = 'VCFv4.0'
+    vcf_template.metadata['source'] = [__program__ + 'V' + __version__]
+
+    vcf_template.filters['LOW'] = vcf.parser._Filter(
+	    'LOW','Position with too low of depth')
+    vcf_template.filters['NO'] = vcf.parser._Filter(
+	    'NO', 'Does not meet criteria to call variant')
+    vcf_template.filters['HETERO'] = vcf.parser._Filter(
+	    'HETERO', 'Enough support to call reference and variant (mixed population)')
+
+    vcf_template.infos['RSR'] = vcf.parser._Info(
+	    'RSR',1,'Integer','Reference-supporting reads')
+    vcf_template.infos['VSR'] = vcf.parser._Info(
+	    'VSR',1,'Integer','Variant-supporting reads')
+    # TODO - This is better represented in VCF natively
+    vcf_template.infos['VF'] = vcf.parser._Info(
+	    'VF',1,'Float','Variant frequency')
+    vcf_template.infos['DP'] = vcf.parser._Info(
+	    'DP',1,'Integer','Read Depth')
+
+    vcf_template._column_headers = [
+	    'CHROM',
+	    'POS',
+	    'ID',
+	    'REF',
+ 	    'ALT',
+	    'QUAL',
+	    'FILTER',
+	    'INFO'
+    ]
+    vcf_writer = vcf.Writer(open('combined_variants.vcf', 'w'), vcf_template)
     instance = CombineConsecVariants() # Create instance of class object
     records_to_write1 = instance.set_consecutive_entries(sys.argv[1])
     consecutive_list =  instance.get_consec_list() # call getter for property of instance of class object
+    duplicate_list = instance.get_dup_list()
     records_to_write2 = instance.combine_variants(consecutive_list) # Return list of record objects
+    records_to_write3 = instance.combine_dups(duplicate_list)
+
     print "lenth of records1 is: ", len(records_to_write1)
     print "lenth of records2 is: ", len(records_to_write2)
-
+    """
     # Sort pysam records by position before writing to new vcf file
-    merged_records = records_to_write1 + records_to_write2
+    merged_records = records_to_write1 + records_to_write2 + records_to_write3
 
     # Sort records by position number
     records_dictionary = {}
     for record in merged_records:
-	# Record is a pysam VariantFile object
-	if isinstance(record,pysam.cbcf.VariantRecord):
-		records_dictionary[record.pos] = record
-	# Record is a pyvcf record object
-	elif isinstance(record,vcf.model._Record):
-		records_dictionary[record.POS] = record
+    	records_dictionary[record.POS] = record
 
     # Order the dictionary by key which will be position numbers
     records_dictionary = collections.OrderedDict(sorted(records_dictionary.items()))
-    # Convert all pysam and pyvcf objects to strings which will be written to the vcf file
+    # Convert all pyvcf objects to strings which will be written to the vcf file
     vcf_strings_to_print = []
     vcf_out = open('combined_variants.vcf','a')
 
     for key in records_dictionary:
     	info_line, filter_line = "", ""
 
-	if isinstance(records_dictionary[key],pysam.cbcf.VariantRecord):
-		record = records_dictionary[key]
-		for key in record.info.keys():
-			if key == "CSQ":
-				info_entry = "CSQ=" + ",".join(record.info[key])
-			else:
-				info_entry = key + "=" + str(record.info[key]) + ";"
-			info_line += info_entry
-		line = record.chrom + "\t" + str(record.pos) + "\t" + "." + "\t" + record.ref + "\t" + "".join(record.alts) + "\t" + str(record.qual) + "\t" + "".join(record.filter) + "\t" + info_line + "\n" 
-		vcf_out.write(line)
-		
-	elif isinstance(records_dictionary[key],vcf.model._Record):
-		record = records_dictionary[key]
-		for key in record.INFO.keys():
-			if key == "CSQ":
-				info_entry = "CSQ=" + ",".join(record.INFO[key])
-			else:
-				info_entry = key + "=" + str(record.INFO[key]) + ";"
-			info_line += info_entry
-		line = record.CHROM + "\t" + str(record.POS) + "\t" + "." + "\t" + record.REF + "\t" + "".join(record.ALT) + "\t" + str(record.QUAL) + "\t" + "".join(record.FILTER) + "\t" + info_line + "\n" 
-		vcf_out.write(line)
+	record = records_dictionary[key]
+	for key in record.INFO.keys():
+		if key == "CSQ":
+			info_entry = "CSQ=" + ",".join(record.INFO[key])
+		else:
+			info_entry = key + "=" + str(record.INFO[key]) + ";"
+		info_line += info_entry
+	list1 = [record.CHROM, str(record.POS), ".", record.REF, str(record.ALT[0]), str(record.QUAL), "".join(record.FILTER), info_line]
+	line = "\t".join(list1) + "\n"
+#	line = record.CHROM + "\t" + str(record.POS) + "\t" + "." + "\t" + record.REF + "\t" + "".join(record.ALT) + "\t" + str(record.QUAL) + "\t" + "".join(record.FILTER) + "\t" + info_line + "\n" 
+	vcf_out.write(line)
 
-			
+    """			
 if __name__ == "__main__":
     main()
