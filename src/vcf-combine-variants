@@ -149,6 +149,7 @@ class CombineConsecVariants():
     def ins_del(self, group):
         prev_entry_type, cur_entry_type = "",""
         for index,entry in enumerate(group):
+	    # print(entry)
             cur_entry_type = self.check_type(entry)[0]
             if index != 0:
                 if (cur_entry_type == "deletion") and (prev_entry_type == "insertion"):
@@ -306,7 +307,7 @@ class CombineConsecVariants():
                         pos,
                         id,
                         combined_ref,
-                        combined_alt,
+                        [combined_alt],
                         qual,
                         filter,
                         info,
@@ -388,7 +389,7 @@ class CombineConsecVariants():
                     for item in group:
                         print(item)
                     """
-
+		    # print('while loop line 391')
                     combined_ref,combined_alt = "",""
                     start_position = self.contains_consec(group,"snp")[0] # Keep original copy of start
                     start_pos_copy = start_position # Create copy of start position to modify
@@ -422,7 +423,7 @@ class CombineConsecVariants():
                     # Assign rest of columns from record with lowest quality score using index
                     entry = group[index]
                     chrom = entry.CHROM
-                    pos = entry.POS
+                    pos = group[start_position].POS
                     id = entry.ID
                     qual = entry.QUAL
                     info = entry.INFO
@@ -435,7 +436,7 @@ class CombineConsecVariants():
                         pos,
                         id,
                         combined_ref,
-                        combined_alt,
+                        [combined_alt],
                         qual,
                         filter,
                         info,
@@ -458,6 +459,7 @@ class CombineConsecVariants():
                 # Merge consecutive deletions
               #  num_to_print = self.contains_consec(group, "deletion")[0]
                 while self.contains_consec(group,"deletion")[0] != -1:
+		    # print('while loop line 461')
                     combined_ref, combined_alt = "",""
                     start_position = self.contains_consec(group,"deletion")[0]  # Keep original copy of start
                     start_pos_copy = start_position # Create copy of start position to modify
@@ -508,7 +510,7 @@ class CombineConsecVariants():
                     info = entry.INFO
                     FORMAT = entry.FORMAT
                     samples = entry.samples
-		    print(chrom, pos, ID, combined_ref, combined_alt,qual, FORMAT, samples)
+		    # print(chrom, pos, ID, combined_ref, combined_alt,qual, FORMAT, samples)
 		    
                     new_record = vcf.model._Record(
                         chrom,
@@ -539,6 +541,7 @@ class CombineConsecVariants():
 
                 # Find ins/del's and del/ins's found in new intermediate list --> each case will either form 1) more snps, 2) unable to combine
                 while self.ins_del(group)[0] != -1: # ex: [index,"ins_del"] or [index,"del_ins"] --> index = -1 if no ins/del, del/ins found
+		    # print('while loop line 543')
                     if self.ins_del(group)[1] == "ins_del":
                         # unique union for refs
                         index = self.ins_del(group)[0] # index of the ins
@@ -602,7 +605,7 @@ class CombineConsecVariants():
                             pos,
                             id,
                             new_refs,
-                            new_alts,
+                            [new_alts],
                             qual,
                             filter,
                             info,
@@ -685,7 +688,7 @@ class CombineConsecVariants():
                                 pos,
                                 id,
                                 new_ref,
-                                new_alt,
+                                [new_alt],
                                 qual,
                                 filter,
                                 info,
@@ -705,13 +708,15 @@ class CombineConsecVariants():
                             """
                         else: # Lengths are not equal --> write out entire block
                             for item in group:
+				# print(item)
                                 merged_variants.append(item)
-                                break # do not check for anymore del/ins
+                            break # do not check for anymore del/ins
 
 
                 #group should now be a shortened list of either length three or greater, including at least one snp
                 # Fuse any consecutive snps created if possible from last step
                 while self.contains_consec(group,"snp")[0] != -1: # value will be -1 if there is no start index for a set of consecutive snps found
+		    # print('while loop line 717')
                     combined_ref,combined_alt = "",""
                     start_position = self.contains_consec(group,"snp")[0] # Keep original copy of start
                     start_pos_copy = start_position # Create copy of start position to modify
@@ -767,7 +772,7 @@ class CombineConsecVariants():
                         pos,
                         id,
                         combined_ref,
-                        combined_alt,
+                        [combined_alt],
                         qual,
                         filter,
                         info,
@@ -861,7 +866,7 @@ class CombineConsecVariants():
                             pos,
                             id,
                             new_refs,
-                            new_alts,
+                            [new_alts],
                             qual,
                             filter,
                             info,
@@ -921,7 +926,7 @@ class CombineConsecVariants():
                         pos,
                         id,
                         combined_refs,
-                        combined_alts,
+                        [combined_alts],
                         qual,
                         filter,
                         info,
@@ -1007,7 +1012,7 @@ class CombineConsecVariants():
                                             pos,
                                             id,
                                             new_refs,
-                                            new_alts,
+                                            [new_alts],
                                             qual,
                                             filter,
                                             info,
@@ -1085,7 +1090,7 @@ class CombineConsecVariants():
                                         new_pos,
                                         id,
                                         new_ref,
-                                        new_alt,
+                                        [new_alt],
                                         qual,
                                         filter,
                                         info,
@@ -1172,7 +1177,7 @@ class CombineConsecVariants():
                                         pos,
                                         id,
                                         combined_ref,
-                                        combined_alt,
+                                        [combined_alt],
                                         qual,
                                         filter,
                                         info,
