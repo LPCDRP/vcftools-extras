@@ -32,10 +32,8 @@ def process_coords(coords_filename):
     querystart_positions = {}
     with open(coords_filename, 'r') as coords_filehandle:
         for line in coords_filehandle:
-            if 'NUCMER' in line or '[S1]' in line:
-                continue
             column = line.rstrip('\n').split('\t')
-            if '' in column:
+            if '/' in column[0] or 'NUCMER' in column or '' in column or '[' in column[0]:
                 continue
             rstart = int(column[0])
             rend = int(column[1])
