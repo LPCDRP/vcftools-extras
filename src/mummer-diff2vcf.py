@@ -4,6 +4,26 @@ import os
 from Bio import SeqIO
 
 GROUPHOME = os.environ['GROUPHOME']
+reference_fasta = GROUPHOME + '/resources/H37Rv.fasta'
+
+
+def sequence(fasta_file):
+    seq = []
+    for seq_record in SeqIO.parse(open(fasta_file, 'r'), 'fasta'):
+        seq.append(seq_record.seq)
+    return seq
+
+
+def diff_output_list(diff_output):
+
+    diff_list = []
+    with open(diff_output, 'r') as input_diff_filehandle:
+        for line in input_diff_filehandle:
+            column = line.rstrip('\n').split('\t')
+            if '/' in column[0] or 'NUCMER' in column or '' in column or '[' in column[0]:
+                continue
+            diff_list.append(column)
+    return diff_list
 
 
 def process_coords(coords_filename):
@@ -30,28 +50,70 @@ def process_coords(coords_filename):
     return querystart_positions, queryend_positions
 
 
+def gaps(mutation_line, qstart_dict, qend_dict, query_fasta, cur_index, diff_reference):
+
+    query_seq = sequence(query_fasta)
+    reference_seq = sequence(reference_fasta)
+
+    if int(mutation_line[2]) < int(mutation_line[3]):
+        qstart = int(mutation_line[2])
+        qend = int(mutation_line[3])
+    else:
+        qstart = int(mutation_line[3])
+        qend = int(mutation_line[2])
+    gap_diff = int(mutation_line[6])
+
+    # Insertion in query
+    if gap_diff > 0:
+        if qstart - 1 in qstart_dict.keys():
+            reference_position = qstart_dict[qstart - 1][0]
+        elif qstart - 1 in qend_dict.keys():
+            reference_position = qend_dict[qstart - 1][1]
+        elif qstart + 1 in qend_dict.keys():
+            reference_position = qend_dict[qstart + 1][1]
+            qstart = qstart + 2  # Need to reset the query start since it is off by one
+        elif qstart + 1 in qstart_dict.keys():
+            reference_position = qstart_dict[qstart + 1][0]
+            qstart = qstart + 2
+        else:
+            print mutation_line
+            exit()
+        ref_base = reference_seq[0][reference_position - 1]
+        alt_base = query_seq[0][qstart - 2:qend - 1]
+        # print '\t'.join(['1', str(reference_position), '.', ''.join(ref_base), ''.join(alt_base)])
+    # Deletion in query
+    elif gap_diff < 0:
+        reference_line = diff_reference[cur_index - 1]
+        if int(reference_line[2]) < int(reference_line[3]):
+            rstart = int(reference_line[2])
+            rend = int(reference_line[3])
+        else:
+            rstart = int(reference_line[3])
+            rend = int(reference_line[2])
+        ref_base = reference_seq[0][rstart - 1:rend]
+        alt_base = reference_seq[0][rstart - 1]
+        # print '\t'.join(['1', str(rstart), '.', ''.join(ref_base), ''.join(alt_base)])
+
+
+def inversions(mutation_line, qstart_dict, qend_dict, query_fasta):
+
+    print mutation_line
+
+
+def relocations(mutation_line):
+    print mutation_line
+
+
 def main():
 
     input_diff_reference = '/home/sbusby/workspace/sv-mummer/sea00042.svs-reference'
     input_diff_query = '/home/sbusby/workspace/sv-mummer/sea00042.svs-query'
-    reference_file = GROUPHOME + '/resources/H37Rv.fasta'
     query_file = GROUPHOME + '/data/genomes/SEA00042.fasta'
     show_coords_file = '/home/sbusby/workspace/sv-mummer/sea00042.coords-sorted'
 
-    reference_seq = []
-    query_seq = []
-    for seq_record in SeqIO.parse(open(reference_file, 'r'), 'fasta'):
-        reference_seq.append(seq_record.seq)
-    for seq_record in SeqIO.parse(open(query_file, 'r'), 'fasta'):
-        query_seq.append(seq_record.seq)
-
-    diff_reference = []
-    diff_query = []
     # Loading reference show-diff output
-    with open(input_diff_reference, 'r') as input_diff_filehandle:
-        for line in input_diff_filehandle:
-            column = line.rstrip('\n').split('\t')
-            diff_reference.append(column)
+    diff_reference = diff_output_list(input_diff_reference)
+    diff_query = diff_output_list(input_diff_query)
     # Loading query show-diff output
     with open(input_diff_query, 'r') as input_diff_filehandle:
         for line in input_diff_filehandle:
