@@ -121,56 +121,21 @@ def main():
     qstartpos, qendpos = process_coords(show_coords_file)
     # Looping over each SV based on the query positions to get sequences
     for mutation in diff_query:
-        chrom = mutation[0]
         sv_type = mutation[1]
-        if int(mutation[2]) < int(mutation[3]):
-            qstart = int(mutation[2])
-            qend = int(mutation[3])
-        else:
-            qstart = int(mutation[3])
-            qend = int(mutation[2])
         if 'GAP' in sv_type:
-            gap_diff = int(mutation[6])
-            # Insertion in query
-            # TODO check 4411532 in reference, 4135134	4425664 in show-coords query columns
-            if gap_diff > 0:
-                if qstart - 1 in qstartpos.keys():
-                    reference_position = qstartpos[qstart - 1][0]
-                elif qstart - 1 in qendpos.keys():
-                    reference_position = qendpos[qstart - 1][1]
-                elif qstart + 1 in qendpos.keys():
-                    reference_position = qendpos[qstart + 1][1]
-                    # Need to reset the query start since it is off by one
-                    qstart = qstart + 2
-                elif qstart + 1 in qstartpos.keys():
-                    reference_position = qstartpos[qstart + 1][0]
-                    qstart = qstart + 2
-                else:
-                    print mutation
-                    exit()
-                ref_base = reference_seq[0][reference_position - 1]
-                alt_base = query_seq[0][qstart - 2:qend - 1]
-                # if ref_base != alt_base[0]:
-                #     print mutation
-                #     print qstart, qend, reference_position
-                print '\t'.join(['1', str(reference_position), '.', ''.join(ref_base), ''.join(alt_base)])
-            # Deletion in query
-            elif gap_diff < 0:
-                cur_index = diff_query.index(mutation)
-                reference_line = diff_reference[cur_index - 1]
-                if int(reference_line[2]) < int(reference_line[3]):
-                    rstart = int(reference_line[2])
-                    rend = int(reference_line[3])
-                else:
-                    rstart = int(reference_line[3])
-                    rend = int(reference_line[2])
-                ref_base = reference_seq[0][rstart - 1:rend]
-                alt_base = reference_seq[0][rstart - 1]
-                print '\t'.join(['1', str(rstart), '.', ''.join(ref_base), ''.join(alt_base)])
+            gaps(mutation_line=mutation,
+                 qstart_dict=qstartpos,
+                 qend_dict=qendpos,
+                 query_fasta=query_file,
+                 diff_reference=diff_reference,
+                 cur_index=diff_query.index(mutation))
+        elif 'JMP' in sv_type:
+            relocations(mutation)
+            # inversions(mutation_line=mutation,
+            #            qstart_dict=qstartpos,
+            #            qend_dict=qendpos,
+            #            query_fasta=query_file)
 
-                # if qstart + 1 in qendpos.keys():
-                #     print mutation
-                #     print qendpos[qstart + 1]
 
 if __name__ == '__main__':
     main()
