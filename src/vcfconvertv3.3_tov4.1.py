@@ -38,7 +38,7 @@ def convert_v3tov4(input_vcf):
 		            base_dict[position+i]=[ref[i],alt[i]]
 
 		        for key,value in base_dict.iteritems():
-			    print column[0], key, column[2], value[0], value[1], column[5], "PASS", column[7]
+			    # print column[0], key, column[2], value[0], value[1], column[5], "PASS", column[7]
 			    #output_list = [column[0], key, column[2], value[0], value[1], column[5],
 		                                        #"PASS", column[7], '\n']
 		            output_file.write('\t'.join([column[0], str(key), column[2], value[0], value[1], column[5], "PASS", column[7], '\n']))
@@ -59,7 +59,7 @@ def convert_v3tov4(input_vcf):
 		                                    "PASS", str(column[7]), '\n']))
 		    else:
 		        column[6]="PASS"
-		        writer.writerow(line)
+		        output_file.write('\t'.join(column) + '\n')
     output_file.close()
 
 
