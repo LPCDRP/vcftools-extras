@@ -8,7 +8,7 @@ vcftools-extras - extra utilities for manipulating files in variant call format
 
 # DESCRIPTION
 
-Our **vcftools-extras** is a collection of scripts for operations on VCF files that are expected to be available in the vcftools/bcftools suites.
+Our **vcftools-extras** is a collection of scripts for operations on VCF files not available in the vcftools/bcftools suites.
 These scripts are developed for internal use so, despite attempts at generality, they may not be adequate for general needs.
 *Use these programs at your own risk.*
 
@@ -19,6 +19,9 @@ vcf-combine-variants
 
 vcf-consenpos
 :	determine position of variants in the consensus sequence
+
+vcf-set-sample
+:	add FORMAT and sample columns to a VCF file for an individual, haploid run
 
 # BUGS
 

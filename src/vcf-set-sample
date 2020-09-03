@@ -1,0 +1,51 @@
+#!/usr/bin/env perl
+# ABSTRACT Encode sample information in a single-sample haploid VCF file
+# PODNAME: vcf-set-sample
+use strict;
+use warnings;
+use File::Basename;
+use Getopt::Long;
+use Pod::Usage;
+
+=head1 SYNOPSIS
+
+    vcf-set-sample [--name sample1] sample1.vcf [sample2.vcf ... ]
+
+=head1 DESCRIPTION
+
+    Variant calling of single samples sometimes does not create a VCF file with a column for the sample ID.
+    When looking to merge a set of these VCF files, this becomes a problem, as the mapping of which variant goes with which sample will be lost.
+
+=head1 OPTIONS
+
+    --name	sample name to use (defaults to name of file w/o .vcf suffix)
+
+=cut
+
+# default sample name is the file's name
+my $sample_name;
+
+GetOptions("name=s" => \$sample_name,
+	   "help"   => \my $help)
+    or pod2usage("-verbose" => 1);
+pod2usage("-verbose" => 1) if $help;
+
+while(<>) {
+    my $line = $_;
+    chomp($line);
+
+    unless (defined($sample_name)) {
+	$sample_name = basename($ARGV, ".vcf");
+    }
+
+    if ($line =~ /^##/) {
+	print("$line\n");
+    } elsif ($line =~ /^#CHROM/) {
+	# First, we'll add one more line to the header
+	print('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'."\n");
+	# Then copy over the line we read
+	print("$line\tFORMAT\t$sample_name\n");
+    } else {
+	print("$line\tGT\t1\n");
+    }
+}
